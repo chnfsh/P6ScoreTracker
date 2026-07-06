@@ -160,7 +160,10 @@
   .comp-row input[type=number]{width:34px;padding:8px 2px;border:2px solid var(--line);border-radius:9px;font-size:14px;text-align:center;-moz-appearance:textfield;}
   .comp-row input[type=number]::-webkit-outer-spin-button,
   .comp-row input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
-  .comp-row button.del{border:none;background:none;color:var(--red);font-size:19px;padding:2px 8px;}
+  .comp-row button.del{border:none;background:none;color:var(--red);font-size:19px;padding:2px 8px;border-radius:8px;}
+  .comp-row button.del.confirm-armed{
+    background:var(--red);color:#fff;font-size:12.5px;font-weight:800;padding:6px 10px;white-space:nowrap;
+  }
   .config-group{border:2px dashed var(--line);border-radius:16px;padding:14px;margin-bottom:16px;background:#fffaf0;}
   .config-group-head{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
   .config-group-head .module-name{
@@ -709,6 +712,13 @@
     var atts = state.attempts[subjId];
     var mt = maxTotal(subjId);
 
+    // renderSubject rebuilds the whole panel via innerHTML every time, which
+    // would otherwise silently reset the "调整计分结构" <details> back to
+    // closed on every click inside it. Read its live open/closed state before
+    // we throw the old DOM away, and reapply it below.
+    var prevConfigBox = root.querySelector(".config-box");
+    var configBoxWasOpen = prevConfigBox ? prevConfigBox.open : false;
+
     var pcts = atts.map(function(a){ return attemptPct(subjId,a); });
     var latestPct = pcts.length ? pcts[pcts.length-1] : null;
     var avgPct = pcts.length ? Math.round((pcts.reduce(function(a,b){return a+b;},0)/pcts.length)*10)/10 : null;
@@ -718,20 +728,22 @@
 
     var configGroupsHtml = modules.map(function(m){
       var compsInModule = comps.filter(function(c){ return moduleOf(c)===m; });
+      var isManaging = editingConfigModule[subjId]===m;
       var rows = compsInModule.map(function(c){
         return '<div class="comp-row" data-cid="'+c.id+'">'
           + '<input type="text" class="comp-name" value="'+esc(displayName(c))+'" placeholder="分项名称">'
           + '<input type="number" class="comp-max" min="0" value="'+c.max+'">'
           + '<span style="font-size:12px;color:var(--muted)">分</span>'
-          + '<button type="button" class="del" title="删除此项" '+(comps.length<=1?"disabled":"")+'>✕</button>'
+          + (isManaging ? '<button type="button" class="del" title="删除此项" '+(comps.length<=1?"disabled":"")+'>✕</button>' : '')
           + '</div>';
       }).join("");
       return '<div class="config-group" data-module="'+esc(m)+'">'
         +   '<div class="config-group-head">'
         +     '<input type="text" class="module-name" value="'+esc(m)+'" placeholder="模块名称（如：试卷一）">'
-        +     '<button type="button" class="btn small add-item-btn" data-module="'+esc(m)+'">+ 分项</button>'
+        +     '<button type="button" class="btn small toggle-manage-btn" data-module="'+esc(m)+'">'+(isManaging?"✅ 完成":"+/− 分项")+'</button>'
         +   '</div>'
         +   rows
+        +   (isManaging ? '<button type="button" class="btn small add-item-btn" data-module="'+esc(m)+'" style="margin-top:6px;">+ 新增一项</button>' : '')
         + '</div>';
     }).join("");
 
@@ -787,7 +799,7 @@
       + '</div>'
       + (isHCLSubject(subjId) ? '<div class="empty-note" style="margin-bottom:6px;">高级华文评为优秀 Distinction（≥80%）／良好 Merit（65–79%）／及格 Pass（50–64%）／未达标 Ungraded（&lt;50%），不计入四科PSLE总分，只作SAP学校同分加分参考～</div>' : '')
 
-      + '<details class="config-box"><summary>调整计分结构（分项名称 / 满分 / 所属模块）</summary>'
+      + '<details class="config-box"'+((configBoxWasOpen || modules.some(function(m){return editingConfigModule[subjId]===m;}))?' open':'')+'><summary>调整计分结构（分项名称 / 满分 / 所属模块）</summary>'
       +   '<div id="compList">'+configGroupsHtml+'</div>'
       +   '<div style="display:flex;gap:10px;margin:10px 0 16px;flex-wrap:wrap;">'
       +     '<button type="button" class="btn primary" id="addModuleBtn">+ 新增模块</button>'
@@ -886,6 +898,7 @@
   }
 
   var editingId = null;
+  var editingConfigModule = {}; // subjId -> module name currently showing delete controls (one at a time)
 
   function wireSubjectEvents(subjId, root){
     var comps = state.components[subjId];
@@ -896,6 +909,13 @@
       do { name = "新模块"+(n>1?n:""); n++; } while(comps.some(function(c){return moduleOf(c)===name;}));
       comps.push({id:uid(), name:"新分项", max:10, module:name});
       queueSave(); renderAll();
+    });
+    Array.prototype.forEach.call(root.querySelectorAll(".toggle-manage-btn"), function(btn){
+      btn.addEventListener("click", function(){
+        var mod = btn.getAttribute("data-module");
+        editingConfigModule[subjId] = (editingConfigModule[subjId]===mod) ? null : mod;
+        renderAll();
+      });
     });
     Array.prototype.forEach.call(root.querySelectorAll(".add-item-btn"), function(btn){
       btn.addEventListener("click", function(){
@@ -919,7 +939,23 @@
       queueSave(); renderAll();
     });
     Array.prototype.forEach.call(root.querySelectorAll(".comp-row .del"), function(btn){
+      var armed = false, revertTimer = null;
       btn.addEventListener("click", function(){
+        // Native confirm()/alert() dialogs are blocked inside Claude's
+        // sandboxed artifact iframe (they silently no-op), so we use a
+        // tap-twice-to-confirm pattern on the button itself instead.
+        if(!armed){
+          armed = true;
+          btn.textContent = "确定?";
+          btn.classList.add("confirm-armed");
+          revertTimer = setTimeout(function(){
+            armed = false;
+            btn.textContent = "✕";
+            btn.classList.remove("confirm-armed");
+          }, 3500);
+          return;
+        }
+        clearTimeout(revertTimer);
         var row = btn.closest(".comp-row");
         var cid = row.getAttribute("data-cid");
         if(state.components[subjId].length<=1) return;
@@ -1072,7 +1108,19 @@
       });
     });
     Array.prototype.forEach.call(root.querySelectorAll(".del-att"), function(btn){
+      var armed = false, revertTimer = null;
+      var originalText = btn.textContent;
       btn.addEventListener("click", function(){
+        if(!armed){
+          armed = true;
+          btn.textContent = "确定?";
+          revertTimer = setTimeout(function(){
+            armed = false;
+            btn.textContent = originalText;
+          }, 3500);
+          return;
+        }
+        clearTimeout(revertTimer);
         var tr = btn.closest("tr");
         var aid = tr.getAttribute("data-aid");
         state.attempts[subjId] = state.attempts[subjId].filter(function(a){return a.id!==aid;});
