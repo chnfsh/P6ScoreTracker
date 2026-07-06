@@ -389,9 +389,37 @@
   var activeTab = "dash";
   var saveTimer = null;
 
-  /* ---------------- storage ---------------- */
+  /* ---------------- storage ----------------
+     window.storage only exists inside Claude's artifact runtime (claude.ai).
+     When this file is hosted standalone (e.g. GitHub Pages), that API is
+     undefined, so we fall back to the browser's own localStorage — same
+     key, same JSON blob, just saved to this domain's local storage instead
+     of the Claude account. */
+  function hasClaudeStorage(){
+    return !!(window.storage && typeof window.storage.get === "function" && typeof window.storage.set === "function");
+  }
+  function storageGet(key){
+    if(hasClaudeStorage()) return window.storage.get(key);
+    return new Promise(function(resolve, reject){
+      try{
+        var raw = localStorage.getItem(key);
+        if(raw==null) return reject(new Error("not found"));
+        resolve({key:key, value:raw});
+      }catch(e){ reject(e); }
+    });
+  }
+  function storageSet(key, value){
+    if(hasClaudeStorage()) return window.storage.set(key, value);
+    return new Promise(function(resolve, reject){
+      try{
+        localStorage.setItem(key, value);
+        resolve({key:key, value:value});
+      }catch(e){ reject(e); }
+    });
+  }
+
   function loadState(cb){
-    window.storage.get(STORAGE_KEY).then(function(res){
+    storageGet(STORAGE_KEY).then(function(res){
       if(res && res.value){
         try{
           var parsed = JSON.parse(res.value);
@@ -453,7 +481,7 @@
   function queueSave(){
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){
-      window.storage.set(STORAGE_KEY, JSON.stringify(state)).catch(function(){
+      storageSet(STORAGE_KEY, JSON.stringify(state)).catch(function(){
         console.error("保存失败，请重试。");
       });
     }, 250);
