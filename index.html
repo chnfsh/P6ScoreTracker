@@ -64,6 +64,15 @@
   .mascot{font-size:46px;filter:drop-shadow(0 4px 0 rgba(0,0,0,.08));animation:float 3s ease-in-out infinite;}
   @keyframes float{0%,100%{transform:translateY(0) rotate(-4deg);}50%{transform:translateY(-8px) rotate(4deg);}}
   @media (prefers-reduced-motion: reduce){.mascot{animation:none;}}
+  .lang-toggle{
+    display:flex;gap:4px;background:#fff;border:3px solid var(--line);border-radius:999px;padding:4px;
+    box-shadow:0 3px 0 rgba(43,36,64,.06);
+  }
+  .lang-toggle button{
+    border:none;background:transparent;padding:8px 16px;border-radius:999px;font-size:14px;
+    font-weight:800;color:var(--ink-soft);font-family:'Baloo 2';
+  }
+  .lang-toggle button.active{background:var(--ink);color:#fff;}
 
   /* ---------- tabs ---------- */
   nav.tabs{
@@ -224,6 +233,16 @@
   footer.disclaimer{
     max-width:1180px;margin:26px auto 0;padding:0 24px;font-size:12.5px;color:var(--muted);line-height:1.65;
   }
+  .save-status{
+    position:fixed;left:16px;right:16px;bottom:16px;max-width:520px;margin:0 auto;
+    background:var(--red);color:#fff;border-radius:16px;padding:12px 16px;
+    display:flex;align-items:center;gap:12px;justify-content:space-between;
+    box-shadow:0 6px 18px rgba(0,0,0,.18);z-index:999;font-size:14px;font-weight:700;
+  }
+  .save-status-retry-btn{
+    border:2px solid rgba(255,255,255,.7);background:rgba(255,255,255,.15);color:#fff;
+    padding:7px 14px;border-radius:10px;font-weight:800;font-size:13px;flex-shrink:0;
+  }
   @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important;}}
   @media (max-width:480px){
     .form-grid-top label{min-width:0;flex:1 1 100%;}
@@ -242,17 +261,23 @@
 <header class="top">
   <div>
     <div class="brand-eyebrow">南洋经纬录 · Nanyang Chronicles</div>
-    <h1>PSLE 备考成绩追踪</h1>
-    <p>记录每一次模拟考、学校统考与自我练习的分项成绩，随时间追踪进步，并预估 PSLE 总分表现。</p>
+    <h1 id="appTitle">PSLE 备考成绩追踪</h1>
+    <p id="appTagline">记录每一次模拟考、学校统考与自我练习的分项成绩，随时间追踪进步，并预估 PSLE 总分表现。</p>
   </div>
-  <div class="mascot">🎈</div>
+  <div style="display:flex;align-items:center;gap:14px;">
+    <div class="lang-toggle" id="langToggle">
+      <button type="button" data-lang="zh" class="active">中文</button>
+      <button type="button" data-lang="en">EN</button>
+    </div>
+    <div class="mascot">🎈</div>
+  </div>
 </header>
 
 <nav class="tabs" id="tabs"></nav>
 
 <main><section class="panel" id="panelRoot"></section></main>
 
-<footer class="disclaimer">
+<footer class="disclaimer" id="footerDisclaimer">
   * 五科的默认计分结构均依据教育部考试局（SEAB）公开发布的官方课程与考试蓝图整理（英文 0001、数学 0008、科学 0009、高级华文 0015、华文 0005），
   其中数学、科学采用 2026 年起生效的新题型蓝图；如与孩子学校实际使用的版本有出入，可在"调整计分结构"里自行修改。
   AL（Achievement Level）等级估算基于常见的公开对照区间（90–100→AL1、85–89→AL2、80–84→AL3、75–79→AL4、65–74→AL5、45–64→AL6、20–44→AL7、0–19→AL8），
@@ -262,18 +287,197 @@
   所有数据仅保存在你的浏览器账户中，可随时在各科目下修改计分结构或删除记录。
 </footer>
 
+<div id="saveStatus" class="save-status" style="display:none;">
+  <span class="save-status-text"></span>
+  <button type="button" class="save-status-retry-btn"><span class="save-status-retry"></span></button>
+</div>
+
 <script>
 (function(){
   "use strict";
 
   /* ---------------- constants ---------------- */
   var SUBJECTS = [
-    {id:"en", name:"英文", short:"EL", color:"#2FA398", emoji:"📖"},
-    {id:"ma", name:"数学", short:"MA", color:"#F0982E", emoji:"➗"},
-    {id:"cl", name:"华文", short:"CL", color:"#B26FD1", emoji:"✍️"},
-    {id:"sc", name:"科学", short:"SC", color:"#3D8BD1", emoji:"🔬"},
-    {id:"hc", name:"高级华文", short:"HCL", color:"#E85D5D", emoji:"🐉"}
+    {id:"en", name:"英文", nameEn:"English", short:"EL", color:"#2FA398", emoji:"📖"},
+    {id:"ma", name:"数学", nameEn:"Math", short:"MA", color:"#F0982E", emoji:"➗"},
+    {id:"cl", name:"华文", nameEn:"Chinese", short:"CL", color:"#B26FD1", emoji:"✍️"},
+    {id:"sc", name:"科学", nameEn:"Science", short:"SC", color:"#3D8BD1", emoji:"🔬"},
+    {id:"hc", name:"高级华文", nameEn:"Higher Chinese", short:"HCL", color:"#E85D5D", emoji:"🐉"}
   ];
+
+  /* ---------------- i18n ----------------
+     UI-language toggle (中文 / EN). This only translates interface chrome
+     (buttons, headers, static instructions). It never touches user data —
+     component/module names (e.g. "试卷一", "Grammar MCQ"), attempt labels,
+     and notes are shown exactly as stored, in whichever language the family
+     typed them. The existing Chinese strings below are copied verbatim from
+     the original single-language version so nothing about the Chinese
+     experience changes. */
+  var STRINGS = {
+    zh: {
+      appTitle: "PSLE 备考成绩追踪",
+      appTagline: "记录每一次模拟考、学校统考与自我练习的分项成绩，随时间追踪进步，并预估 PSLE 总分表现。",
+      tabDash: "🏠 总览",
+      dashLatestPrefix: " · 最近：",
+      dashEmptyNote: "还没有成绩记录，去添加第一次吧！",
+      hclDashNote: "不计入四科总分，仅作SAP同分加分参考",
+      totalBandTitle: "预估 PSLE 总分",
+      totalBandExplain: "分数越低代表表现越好，4分为满分（4科全部AL1）。高级华文按 <b>优秀 Distinction / 良好 Merit / 及格 Pass / 未达标 Ungraded</b> 评分，<u>不计入</u>这个四科总分，只在总分相同时作为申请 SAP 学校的加分参考哦～",
+      subjectNoScoreYet: "：暂无成绩",
+      recentTitle: "最近的记录",
+      recentEmpty: "暂无记录，先到各科目页面添加第一次成绩吧。",
+      cdMore30: "📅 距考试还有 {d} 天",
+      cdUrgent: "⏰ 只剩 {d} 天啦！",
+      cdToday: "🎯 就是今天！",
+      cdPast: "✅ 已考完",
+      subjectPageSuffix: " 成绩追踪",
+      statRecords: "记录次数",
+      statLatest: "最近一次",
+      statAverage: "平均分",
+      statBest: "最佳成绩",
+      statFullMarks: "满分",
+      statGrade: "当前等级",
+      hclSubjectNote: "高级华文评为优秀 Distinction（≥80%）／良好 Merit（65–79%）／及格 Pass（50–64%）／未达标 Ungraded（<50%），不计入四科PSLE总分，只作SAP学校同分加分参考～",
+      configSummary: "调整计分结构（分项名称 / 满分 / 所属模块）",
+      modulePlaceholder: "模块名称（如：试卷一）",
+      toggleManageDone: "✅ 完成",
+      toggleManageDefault: "+/− 分项",
+      addItemBtn: "+ 新增一项",
+      addModuleBtn: "+ 新增模块",
+      saveCompBtn: "保存计分结构",
+      addScoreTitle: "添加一次成绩",
+      moduleHintParagraph: "📝 只做了部分模块？把没做的模块取消勾选就行——那部分会自动用\"历史平均分\"（还没有历史记录就用满分）来估算全卷表现，不会影响你实际做的那部分的得分统计。",
+      labelNameSource: "名称/来源",
+      placeholderNameSource: "例：学校统考 / 名校模拟卷1",
+      labelDateOptional: "日期（可选）",
+      moduleToggleHint: "✓ 这次有做这个模块",
+      liveModuleLabel: "本次模块得分：",
+      liveFullLabel: "全卷估算：",
+      overrideLabelText: "手动填写总分（如英文综合评分，或考完整卷有官方总分）",
+      overridePlaceholder: "总分",
+      notesPlaceholder: "备注（可选）：错题类型、时间分配、心得等",
+      submitBtnDefault: "保存本次成绩",
+      submitBtnEditing: "保存修改",
+      cancelEditBtn: "取消编辑",
+      historyTitle: "历史记录",
+      thName: "名称",
+      thDate: "日期",
+      thModuleScore: "本次模块得分",
+      thFullEstimate: "全卷估算",
+      thPercent: "百分比",
+      editBtnLabel: "编辑",
+      deleteBtnLabel: "删除",
+      confirmLabel: "确定?",
+      noDataYet: "还没有记录，先在上方添加第一次成绩吧。",
+      chartTrendTitle: "成绩趋势（百分比）",
+      chartCompareTitle: "最近一次 vs 平均（分项对比）",
+      noData: "暂无数据",
+      legendLatest: "最近一次",
+      legendAverage: "历史平均",
+      saveFailedWarning: "⚠️ 保存遇到问题，你的最新修改可能还没存上。",
+      retryBtn: "重试",
+      footerDisclaimer: '* 五科的默认计分结构均依据教育部考试局（SEAB）公开发布的官方课程与考试蓝图整理（英文 0001、数学 0008、科学 0009、高级华文 0015、华文 0005），'
+        + '其中数学、科学采用 2026 年起生效的新题型蓝图；如与孩子学校实际使用的版本有出入，可在"调整计分结构"里自行修改。'
+        + 'AL（Achievement Level）等级估算基于常见的公开对照区间（90–100→AL1、85–89→AL2、80–84→AL3、75–79→AL4、65–74→AL5、45–64→AL6、20–44→AL7、0–19→AL8），'
+        + '仅供备考参考，并非教育部官方逐年发布的正式转换表，实际 AL 会因当年考生整体表现而略有浮动。总分（4–32分，分数越低越好）为英文、数学、科学、华文四科 AL 之和的估算值。'
+        + '高级华文（Higher Mother Tongue）按 <b>优秀 Distinction（≥80%）／良好 Merit（65–79%）／及格 Pass（50–64%）／未达标 Ungraded（&lt;50%）</b> 评分，'
+        + '不计入四科总分，仅在总分相同时作为申请 SAP 学校的加分参考。'
+        + '所有数据仅保存在你的浏览器账户中，可随时在各科目下修改计分结构或删除记录。'
+    },
+    en: {
+      appTitle: "PSLE Score Tracker",
+      appTagline: "Log every practice test, school exam, and self-study score, track progress over time, and estimate PSLE performance.",
+      tabDash: "🏠 Overview",
+      dashLatestPrefix: " · Latest: ",
+      dashEmptyNote: "No scores yet — add your first one!",
+      hclDashNote: "Not counted in the 4-subject total; only an SAP tie-breaker",
+      totalBandTitle: "Estimated PSLE Total Score",
+      totalBandExplain: "Lower is better — 4 is the best possible score (AL1 in all 4 subjects). Higher Chinese is graded <b>Distinction / Merit / Pass / Ungraded</b> and is <u>not</u> counted in this 4-subject total; it's only used as an SAP-school tie-breaker.",
+      subjectNoScoreYet: ": no score yet",
+      recentTitle: "Recent Records",
+      recentEmpty: "No records yet — head to a subject page to add your first score.",
+      cdMore30: "📅 {d} days until the exam",
+      cdUrgent: "⏰ Only {d} days left!",
+      cdToday: "🎯 It's today!",
+      cdPast: "✅ Exam completed",
+      subjectPageSuffix: " Score Tracker",
+      statRecords: "Records",
+      statLatest: "Latest",
+      statAverage: "Average",
+      statBest: "Best Score",
+      statFullMarks: "Full Marks",
+      statGrade: "Current Grade",
+      hclSubjectNote: "Higher Chinese is graded Distinction (≥80%) / Merit (65–79%) / Pass (50–64%) / Ungraded (<50%). It doesn't count toward the 4-subject PSLE total — only as an SAP-school tie-breaker.",
+      configSummary: "Adjust Scoring Structure (Item Name / Full Marks / Module)",
+      modulePlaceholder: "Module name (e.g. Paper 1)",
+      toggleManageDone: "✅ Done",
+      toggleManageDefault: "+/− Items",
+      addItemBtn: "+ Add Item",
+      addModuleBtn: "+ Add Module",
+      saveCompBtn: "Save Structure",
+      addScoreTitle: "Add a Score",
+      moduleHintParagraph: "📝 Only did some modules? Just uncheck the ones you skipped — those will be auto-filled using your historical average for that item (or full marks if there's no history yet) to estimate full-paper performance, without affecting the score for what you actually did.",
+      labelNameSource: "Name / Source",
+      placeholderNameSource: "e.g. School Exam / Mock Paper 1",
+      labelDateOptional: "Date (optional)",
+      moduleToggleHint: "✓ Attempted this time",
+      liveModuleLabel: "This attempt's module score: ",
+      liveFullLabel: "Full-paper estimate: ",
+      overrideLabelText: "Enter total manually (e.g. English's composite score, or an official full-paper total)",
+      overridePlaceholder: "Total",
+      notesPlaceholder: "Notes (optional): mistake patterns, time management, reflections, etc.",
+      submitBtnDefault: "Save This Score",
+      submitBtnEditing: "Save Changes",
+      cancelEditBtn: "Cancel Edit",
+      historyTitle: "History",
+      thName: "Name",
+      thDate: "Date",
+      thModuleScore: "Module Score",
+      thFullEstimate: "Full-Paper Estimate",
+      thPercent: "Percentage",
+      editBtnLabel: "Edit",
+      deleteBtnLabel: "Delete",
+      confirmLabel: "Sure?",
+      noDataYet: "No records yet — add your first score above.",
+      chartTrendTitle: "Score Trend (%)",
+      chartCompareTitle: "Latest vs Average (by Item)",
+      noData: "No data yet",
+      legendLatest: "Latest",
+      legendAverage: "Historical Average",
+      saveFailedWarning: "⚠️ Trouble saving — your latest change may not be saved yet.",
+      retryBtn: "Retry",
+      footerDisclaimer: "* The default scoring structure for all five subjects is based on the official syllabus/exam blueprints published by Singapore's exam board (SEAB) — English 0001, Math 0008, Science 0009, Higher Chinese 0015, Chinese 0005. "
+        + "Math and Science use the new question-format blueprint effective from 2026. If your child's school uses a different version, adjust it under \"Adjust Scoring Structure\". "
+        + "AL (Achievement Level) estimates use commonly-cited public score ranges (90–100→AL1, 85–89→AL2, 80–84→AL3, 75–79→AL4, 65–74→AL5, 45–64→AL6, 20–44→AL7, 0–19→AL8) — "
+        + "for reference only, not MOE's official year-by-year conversion table, which shifts slightly based on each cohort's performance. The total score (4–32, lower is better) is the sum of AL for English, Math, Science, and Chinese. "
+        + "Higher Chinese (Higher Mother Tongue) is graded <b>Distinction (≥80%) / Merit (65–79%) / Pass (50–64%) / Ungraded (&lt;50%)</b>, "
+        + "and is not counted in the 4-subject total — only used as an SAP-school tie-breaker when totals are equal. "
+        + "All data is stored only in your own browser/account, and you can edit the scoring structure or delete records under any subject at any time."
+    }
+  };
+  function t(key){
+    var lang = state.uiLang || "zh";
+    var dict = STRINGS[lang] || STRINGS.zh;
+    return (dict[key]!=null) ? dict[key] : (STRINGS.zh[key]!=null ? STRINGS.zh[key] : key);
+  }
+  function tFmt(key, n){ return t(key).replace("{d}", n); }
+  function subjectName(s){ return (state.uiLang==="en" && s.nameEn) ? s.nameEn : s.name; }
+  function applyStaticText(){
+    var titleEl = document.getElementById("appTitle");
+    var taglineEl = document.getElementById("appTagline");
+    var footerEl = document.getElementById("footerDisclaimer");
+    if(titleEl) titleEl.textContent = t("appTitle");
+    if(taglineEl) taglineEl.textContent = t("appTagline");
+    if(footerEl) footerEl.innerHTML = t("footerDisclaimer");
+    var saveStatusEl = document.getElementById("saveStatus");
+    if(saveStatusEl && saveStatusEl.style.display !== "none"){
+      saveStatusEl.querySelector(".save-status-text").textContent = t("saveFailedWarning");
+      saveStatusEl.querySelector(".save-status-retry").textContent = t("retryBtn");
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("#langToggle button"), function(b){
+      b.classList.toggle("active", b.getAttribute("data-lang")===(state.uiLang||"zh"));
+    });
+  }
 
   // 2026 PSLE written-examination dates, taken from the official exam
   // timetable the user uploaded (English/Math/Chinese/Science/Higher Chinese
@@ -300,10 +504,10 @@
     if(d==null) return "";
     var cls = "countdown-pill";
     var text;
-    if(d > 30) { text = "📅 距考试还有 "+d+" 天"; }
-    else if(d > 0){ cls += " urgent"; text = "⏰ 只剩 "+d+" 天啦！"; }
-    else if(d === 0){ cls += " urgent"; text = "🎯 就是今天！"; }
-    else { cls += " past"; text = "✅ 已考完"; }
+    if(d > 30) { text = tFmt("cdMore30", d); }
+    else if(d > 0){ cls += " urgent"; text = tFmt("cdUrgent", d); }
+    else if(d === 0){ cls += " urgent"; text = t("cdToday"); }
+    else { cls += " past"; text = t("cdPast"); }
     return '<span class="'+cls+'">'+text+'</span>';
   }
 
@@ -384,13 +588,12 @@
       components[s.id] = defaultComponents(s.id);
       attempts[s.id] = [];
     });
-    return {components:components, attempts:attempts};
+    return {components:components, attempts:attempts, uiLang:"zh"};
   }
 
   var STORAGE_KEY = "psle-tracker-data-v1";
   var state = freshState();
   var activeTab = "dash";
-  var saveTimer = null;
 
   /* ---------------- storage ----------------
      window.storage only exists inside Claude's artifact runtime (claude.ai).
@@ -435,6 +638,7 @@
             if(!parsed.attempts[s.id]) parsed.attempts[s.id] = fresh.attempts[s.id];
           });
           state = parsed;
+          if(!state.uiLang) state.uiLang = "zh";
           // one-time cleanup: earlier versions of this tool seeded 6 sample
           // English records (ids starting with "seed-en-"). Strip them out of
           // any already-saved data so they don't keep reappearing.
@@ -472,6 +676,25 @@
             state.structureMigratedV3 = true;
             queueSave();
           }
+          // v4: 华文 试卷二"阅读理解二"(32分) split into 4 finer items per a tutor's
+          // suggestion (篇章一 选择题6+书面互动4, 篇章二 找词语4+问答题18). Same safe
+          // guard: only applied if no 华文 scores have been recorded yet.
+          if(!parsed.structureMigratedV4){
+            if(state.components.cl && (!state.attempts.cl || state.attempts.cl.length===0)){
+              state.components.cl = fresh.components.cl;
+            }
+            state.structureMigratedV4 = true;
+            queueSave();
+          }
+          // v5: reverted v4's 阅读理解二 4-way split back to a single 32-point item
+          // (too granular for daily use) — same safe guard.
+          if(!parsed.structureMigratedV5){
+            if(state.components.cl && (!state.attempts.cl || state.attempts.cl.length===0)){
+              state.components.cl = fresh.components.cl;
+            }
+            state.structureMigratedV5 = true;
+            queueSave();
+          }
         }catch(e){ state = freshState(); }
       }
       cb();
@@ -481,13 +704,40 @@
     });
   }
 
+  var saveTimer = null;
+  var saveRetryTimer = null;
+
+  function hideSaveWarning(){
+    var el = document.getElementById("saveStatus");
+    if(el) el.style.display = "none";
+  }
+  function showSaveWarning(){
+    var el = document.getElementById("saveStatus");
+    if(!el) return;
+    el.querySelector(".save-status-text").textContent = t("saveFailedWarning");
+    el.querySelector(".save-status-retry").textContent = t("retryBtn");
+    el.style.display = "flex";
+  }
+  function attemptSave(retriesLeft, delayMs){
+    clearTimeout(saveRetryTimer);
+    storageSet(STORAGE_KEY, JSON.stringify(state)).then(function(){
+      hideSaveWarning();
+    }).catch(function(){
+      if(retriesLeft > 0){
+        saveRetryTimer = setTimeout(function(){
+          attemptSave(retriesLeft - 1, Math.min(delayMs * 2, 8000));
+        }, delayMs);
+      } else {
+        console.error(state.uiLang==="en" ? "Save failed after retries, please try again." : "多次重试后仍保存失败，请稍后再试。");
+        showSaveWarning();
+      }
+    });
+  }
   function queueSave(){
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){
-      storageSet(STORAGE_KEY, JSON.stringify(state)).catch(function(){
-        console.error("保存失败，请重试。");
-      });
-    }, 250);
+      attemptSave(3, 1000); // immediate try, then retry up to 3x with backoff (1s, 2s, 4s)
+    }, 600);
   }
 
   /* ---------------- helpers ---------------- */
@@ -596,9 +846,9 @@
   /* ---------------- rendering: tabs ---------------- */
   function renderTabs(){
     var tabsEl = document.getElementById("tabs");
-    var html = '<button data-tab="dash" class="'+(activeTab==="dash"?"active":"")+'">🏠 总览</button>';
+    var html = '<button data-tab="dash" class="'+(activeTab==="dash"?"active":"")+'">'+t("tabDash")+'</button>';
     SUBJECTS.forEach(function(s){
-      html += '<button data-tab="'+s.id+'" class="'+(activeTab===s.id?"active":"")+'" style="--accent:'+s.color+'">'+s.emoji+' '+s.name+'</button>';
+      html += '<button data-tab="'+s.id+'" class="'+(activeTab===s.id?"active":"")+'" style="--accent:'+s.color+'">'+s.emoji+' '+subjectName(s)+'</button>';
     });
     tabsEl.innerHTML = html;
     Array.prototype.forEach.call(tabsEl.querySelectorAll("button"), function(btn){
@@ -639,12 +889,12 @@
       var sparkId = "spark-"+s.id;
       return '<div class="subject-card" style="--stamp-color:'+s.color+'">'
         + '<div class="stamp" title="'+(badge?esc(badge.full):"")+'"><span>'+(badge?badge.text:"—")+'</span></div>'
-        + '<div class="name">'+s.emoji+' '+s.name+'</div>'
+        + '<div class="name">'+s.emoji+' '+subjectName(s)+'</div>'
         + countdownBadge(s.id)
-        + '<div class="sub">'+atts.length+' 次记录'+(latest? " · 最近："+esc(latest.label||"—"):"")+'</div>'
-        + (atts.length ? '<canvas class="spark" id="'+sparkId+'"></canvas>' : '<div class="empty-note">还没有成绩记录，去添加第一次吧！</div>')
+        + '<div class="sub">'+atts.length+' '+(state.uiLang==="en"?(atts.length===1?"record":"records"):"次记录")+(latest? t("dashLatestPrefix")+esc(latest.label||"—"):"")+'</div>'
+        + (atts.length ? '<canvas class="spark" id="'+sparkId+'"></canvas>' : '<div class="empty-note">'+t("dashEmptyNote")+'</div>')
         + '<div class="metric-row"><span class="big">'+(latestPct!=null?latestPct+"%":"–")+'</span>'+deltaHtml+'</div>'
-        + (isHCLSubject(s.id) ? '<div class="empty-note">不计入四科总分，仅作SAP同分加分参考</div>' : '')
+        + (isHCLSubject(s.id) ? '<div class="empty-note">'+t("hclDashNote")+'</div>' : '')
         + '</div>';
     }).join("");
 
@@ -652,11 +902,11 @@
     var totalDetail = coreForTotal.map(function(id){
       var atts = state.attempts[id];
       var latest = atts[atts.length-1];
-      if(!latest){ totalOk=false; return subjectById(id).name+"：暂无成绩"; }
+      if(!latest){ totalOk=false; return subjectName(subjectById(id))+t("subjectNoScoreYet"); }
       var pct = attemptPct(id, latest);
       var al = alFromPct(pct);
       totalAL += al;
-      return subjectById(id).name+" AL"+al;
+      return subjectName(subjectById(id))+" AL"+al;
     }).join(" + ");
 
     var recentAll = [];
@@ -669,19 +919,17 @@
     recentAll = recentAll.slice(-8).reverse();
     var recentHtml = recentAll.length ? recentAll.map(function(r){
       var pct = attemptPct(r.subj.id, r.att);
-      return '<li><span>'+r.subj.name+' · '+esc(r.att.label||"未命名记录")+'</span>'
+      return '<li><span>'+subjectName(r.subj)+' · '+esc(r.att.label||(state.uiLang==="en"?"Untitled record":"未命名记录"))+'</span>'
         +'<span class="tag">'+pct+'%（AL'+alFromPct(pct)+'）</span></li>';
-    }).join("") : '<li class="empty-note" style="border:none;">暂无记录，先到各科目页面添加第一次成绩吧。</li>';
+    }).join("") : '<li class="empty-note" style="border:none;">'+t("recentEmpty")+'</li>';
 
     root.innerHTML =
       '<div class="dash-grid">'+cardsHtml+'</div>'
       + '<div class="total-band">'
       +   '<div class="num">'+(totalOk?totalAL:"—")+' <small>/ 32</small></div>'
-      +   '<div class="label"><b>预估 PSLE 总分</b>（'+totalDetail+'）。分数越低代表表现越好，4分为满分（4科全部AL1）。'
-      +     '高级华文按 <b>优秀 Distinction / 良好 Merit / 及格 Pass / 未达标 Ungraded</b> 评分，'
-      +     '<u>不计入</u>这个四科总分，只在总分相同时作为申请 SAP 学校的加分参考哦～</div>'
+      +   '<div class="label"><b>'+t("totalBandTitle")+'</b>（'+totalDetail+'）。'+t("totalBandExplain")+'</div>'
       + '</div>'
-      + '<h3 class="section-title">最近的记录</h3>'
+      + '<h3 class="section-title">'+t("recentTitle")+'</h3>'
       + '<ul class="recent-list">'+recentHtml+'</ul>';
 
     // sparklines
@@ -731,19 +979,19 @@
       var isManaging = editingConfigModule[subjId]===m;
       var rows = compsInModule.map(function(c){
         return '<div class="comp-row" data-cid="'+c.id+'">'
-          + '<input type="text" class="comp-name" value="'+esc(displayName(c))+'" placeholder="分项名称">'
+          + '<input type="text" class="comp-name" value="'+esc(displayName(c))+'" placeholder="'+ (state.uiLang==="en"?"Item name":"分项名称") +'">'
           + '<input type="number" class="comp-max" min="0" value="'+c.max+'">'
-          + '<span style="font-size:12px;color:var(--muted)">分</span>'
-          + (isManaging ? '<button type="button" class="del" title="删除此项" '+(comps.length<=1?"disabled":"")+'>✕</button>' : '')
+          + '<span style="font-size:12px;color:var(--muted)">'+(state.uiLang==="en"?"pts":"分")+'</span>'
+          + (isManaging ? '<button type="button" class="del" title="'+t("deleteBtnLabel")+'" '+(comps.length<=1?"disabled":"")+'>✕</button>' : '')
           + '</div>';
       }).join("");
       return '<div class="config-group" data-module="'+esc(m)+'">'
         +   '<div class="config-group-head">'
-        +     '<input type="text" class="module-name" value="'+esc(m)+'" placeholder="模块名称（如：试卷一）">'
-        +     '<button type="button" class="btn small toggle-manage-btn" data-module="'+esc(m)+'">'+(isManaging?"✅ 完成":"+/− 分项")+'</button>'
+        +     '<input type="text" class="module-name" value="'+esc(m)+'" placeholder="'+t("modulePlaceholder")+'">'
+        +     '<button type="button" class="btn small toggle-manage-btn" data-module="'+esc(m)+'">'+(isManaging?t("toggleManageDone"):t("toggleManageDefault"))+'</button>'
         +   '</div>'
         +   rows
-        +   (isManaging ? '<button type="button" class="btn small add-item-btn" data-module="'+esc(m)+'" style="margin-top:6px;">+ 新增一项</button>' : '')
+        +   (isManaging ? '<button type="button" class="btn small add-item-btn" data-module="'+esc(m)+'" style="margin-top:6px;">'+t("addItemBtn")+'</button>' : '')
         + '</div>';
     }).join("");
 
@@ -756,7 +1004,7 @@
       return '<div class="module-group" data-module="'+esc(m)+'">'
         +   '<label class="module-toggle"><input type="checkbox" class="module-check" data-module="'+esc(m)+'" checked> '
         +     '<b>'+esc(m)+'</b>'
-        +     '<span class="module-hint">✓ 这次有做这个模块</span>'
+        +     '<span class="module-hint">'+t("moduleToggleHint")+'</span>'
         +   '</label>'
         +   '<div class="score-grid">'+cells+'</div>'
         + '</div>';
@@ -767,11 +1015,12 @@
       var col = pctColor(pct);
       var mstat = moduleStats(subjId, a);
       var isFullPaper = mstat.max === mt;
+      var autoFillTitle = state.uiLang==="en" ? "Auto-filled (historical average or full marks)" : "自动补齐（历史平均或满分）";
       var cells = comps.map(function(c){
         var v = a.scores[c.id];
         var sel = a.moduleSelection || {};
         var wasReal = sel[moduleOf(c)] !== false;
-        return '<td'+(wasReal?'':' style="color:var(--muted);font-style:italic;" title="自动补齐（历史平均或满分）"')+'>'+(v==null||v===""?"—":v)+'</td>';
+        return '<td'+(wasReal?'':' style="color:var(--muted);font-style:italic;" title="'+autoFillTitle+'"')+'>'+(v==null||v===""?"—":v)+'</td>';
       }).join("");
       return '<tr data-aid="'+a.id+'">'
         + '<td>'+esc(a.label||"—")+'</td>'
@@ -780,75 +1029,75 @@
         + '<td>'+(isFullPaper?'—':'<b>'+mstat.sum+'</b> / '+mstat.max)+'</td>'
         + '<td><b>'+attemptTotal(subjId,a)+'</b> / '+mt+'</td>'
         + '<td><span class="pct-pill" style="background:'+col+'22;color:'+col+'">'+pct+'% · '+gradeBadge(subjId,pct).text+'</span></td>'
-        + '<td class="row-actions"><button class="edit-att" title="载入到表单编辑">编辑</button><button class="del-att danger" title="删除">删除</button></td>'
+        + '<td class="row-actions"><button class="edit-att" title="'+(state.uiLang==="en"?"Load into form to edit":"载入到表单编辑")+'">'+t("editBtnLabel")+'</button><button class="del-att danger" title="'+t("deleteBtnLabel")+'">'+t("deleteBtnLabel")+'</button></td>'
         + '</tr>';
     }).join("");
 
     root.innerHTML =
       '<div class="subject-header">'
-      +   '<div><div class="accent-bar" style="--accent:'+subj.color+'"></div><h2>'+subj.emoji+' '+subj.name+' 成绩追踪</h2></div>'
+      +   '<div><div class="accent-bar" style="--accent:'+subj.color+'"></div><h2>'+subj.emoji+' '+subjectName(subj)+t("subjectPageSuffix")+'</h2></div>'
       +   countdownBadge(subjId)
       + '</div>'
       + '<div class="stat-strip">'
-      +   '<div class="stat-chip">记录次数<b>'+atts.length+'</b></div>'
-      +   '<div class="stat-chip">最近一次<b>'+(latestPct!=null?latestPct+"%":"—")+'</b></div>'
-      +   '<div class="stat-chip">平均分<b>'+(avgPct!=null?avgPct+"%":"—")+'</b></div>'
-      +   '<div class="stat-chip">最佳成绩<b>'+(bestPct!=null?bestPct+"%":"—")+'</b></div>'
-      +   '<div class="stat-chip">满分<b>'+mt+'</b></div>'
-      +   '<div class="stat-chip">当前等级<b style="color:'+subj.color+'">'+(latestPct!=null?gradeBadge(subjId,latestPct).text:"—")+'</b></div>'
+      +   '<div class="stat-chip">'+t("statRecords")+'<b>'+atts.length+'</b></div>'
+      +   '<div class="stat-chip">'+t("statLatest")+'<b>'+(latestPct!=null?latestPct+"%":"—")+'</b></div>'
+      +   '<div class="stat-chip">'+t("statAverage")+'<b>'+(avgPct!=null?avgPct+"%":"—")+'</b></div>'
+      +   '<div class="stat-chip">'+t("statBest")+'<b>'+(bestPct!=null?bestPct+"%":"—")+'</b></div>'
+      +   '<div class="stat-chip">'+t("statFullMarks")+'<b>'+mt+'</b></div>'
+      +   '<div class="stat-chip">'+t("statGrade")+'<b style="color:'+subj.color+'">'+(latestPct!=null?gradeBadge(subjId,latestPct).text:"—")+'</b></div>'
       + '</div>'
-      + (isHCLSubject(subjId) ? '<div class="empty-note" style="margin-bottom:6px;">高级华文评为优秀 Distinction（≥80%）／良好 Merit（65–79%）／及格 Pass（50–64%）／未达标 Ungraded（&lt;50%），不计入四科PSLE总分，只作SAP学校同分加分参考～</div>' : '')
+      + (isHCLSubject(subjId) ? '<div class="empty-note" style="margin-bottom:6px;">'+t("hclSubjectNote")+'</div>' : '')
 
-      + '<details class="config-box"'+((configBoxWasOpen || modules.some(function(m){return editingConfigModule[subjId]===m;}))?' open':'')+'><summary>调整计分结构（分项名称 / 满分 / 所属模块）</summary>'
+      + '<details class="config-box"'+((configBoxWasOpen || modules.some(function(m){return editingConfigModule[subjId]===m;}))?' open':'')+'><summary>'+t("configSummary")+'</summary>'
       +   '<div id="compList">'+configGroupsHtml+'</div>'
       +   '<div style="display:flex;gap:10px;margin:10px 0 16px;flex-wrap:wrap;">'
-      +     '<button type="button" class="btn primary" id="addModuleBtn">+ 新增模块</button>'
-      +     '<button type="button" class="btn primary" id="saveCompBtn">保存计分结构</button>'
+      +     '<button type="button" class="btn primary" id="addModuleBtn">'+t("addModuleBtn")+'</button>'
+      +     '<button type="button" class="btn primary" id="saveCompBtn">'+t("saveCompBtn")+'</button>'
       +   '</div>'
       + '</details>'
 
-      + '<h3 class="section-title">添加一次成绩</h3>'
-      + '<p class="empty-note" style="margin:-4px 0 14px;">📝 只做了部分模块？把没做的模块取消勾选就行——那部分会自动用"历史平均分"（还没有历史记录就用满分）来估算全卷表现，不会影响你实际做的那部分的得分统计。</p>'
+      + '<h3 class="section-title">'+t("addScoreTitle")+'</h3>'
+      + '<p class="empty-note" style="margin:-4px 0 14px;">'+t("moduleHintParagraph")+'</p>'
       + '<form class="entry-form" id="entryForm">'
       +   '<div class="form-grid-top">'
-      +     '<label>名称/来源<input type="text" id="fLabel" placeholder="例：学校统考 / 名校模拟卷1"></label>'
-      +     '<label>日期（可选）<input type="date" id="fDate"></label>'
+      +     '<label>'+t("labelNameSource")+'<input type="text" id="fLabel" placeholder="'+t("placeholderNameSource")+'"></label>'
+      +     '<label>'+t("labelDateOptional")+'<input type="date" id="fDate"></label>'
       +   '</div>'
       +   moduleGroupsHtml
       +   '<div class="live-total">'
-      +     '本次模块得分：<b id="liveModuleSum">0</b> / <span id="liveModuleMax">'+mt+'</span>　'
-      +     '全卷估算：<b id="liveFullSum">0</b> / '+mt
+      +     t("liveModuleLabel")+'<b id="liveModuleSum">0</b> / <span id="liveModuleMax">'+mt+'</span>　'
+      +     t("liveFullLabel")+'<b id="liveFullSum">0</b> / '+mt
       +   '</div>'
       +   '<div class="live-total" style="background:#fff8ec;">'
-      +     '<span class="override-wrap"><input type="checkbox" id="overrideChk"> 手动填写总分（如英文综合评分，或考完整卷有官方总分）'
-      +       '<input type="number" id="overrideVal" disabled placeholder="总分"></span>'
+      +     '<span class="override-wrap"><input type="checkbox" id="overrideChk"> '+t("overrideLabelText")
+      +       '<input type="number" id="overrideVal" disabled placeholder="'+t("overridePlaceholder")+'"></span>'
       +   '</div>'
-      +   '<textarea class="notes" id="fNotes" placeholder="备注（可选）：错题类型、时间分配、心得等"></textarea>'
+      +   '<textarea class="notes" id="fNotes" placeholder="'+t("notesPlaceholder")+'"></textarea>'
       +   '<div class="form-actions">'
-      +     '<button type="submit" class="btn accent" style="--accent:'+subj.color+'" id="submitBtn">保存本次成绩</button>'
-      +     '<button type="button" class="btn ghost" id="cancelEditBtn" style="display:none;">取消编辑</button>'
+      +     '<button type="submit" class="btn accent" style="--accent:'+subj.color+'" id="submitBtn">'+t("submitBtnDefault")+'</button>'
+      +     '<button type="button" class="btn ghost" id="cancelEditBtn" style="display:none;">'+t("cancelEditBtn")+'</button>'
       +   '</div>'
       + '</form>'
 
-      + '<h3 class="section-title">历史记录</h3>'
+      + '<h3 class="section-title">'+t("historyTitle")+'</h3>'
       + (atts.length ?
           '<div style="overflow-x:auto;"><table class="attempts"><thead>'
-          + '<tr><th rowspan="2">名称</th><th rowspan="2">日期</th>'
+          + '<tr><th rowspan="2">'+t("thName")+'</th><th rowspan="2">'+t("thDate")+'</th>'
           + modules.map(function(m){
               var count = comps.filter(function(c){return moduleOf(c)===m;}).length;
               return '<th colspan="'+count+'" style="text-align:center;">'+esc(m)+'</th>';
             }).join("")
-          + '<th rowspan="2">本次模块得分</th><th rowspan="2">全卷估算</th><th rowspan="2">百分比</th><th rowspan="2"></th></tr>'
+          + '<th rowspan="2">'+t("thModuleScore")+'</th><th rowspan="2">'+t("thFullEstimate")+'</th><th rowspan="2">'+t("thPercent")+'</th><th rowspan="2"></th></tr>'
           + '<tr>'+comps.map(function(c){return "<th>"+esc(displayName(c))+"</th>";}).join("")+'</tr>'
           + '</thead><tbody>'+tableRows+'</tbody></table></div>'
-        : '<div class="no-data">还没有记录，先在上方添加第一次成绩吧。</div>')
+        : '<div class="no-data">'+t("noDataYet")+'</div>')
 
       + '<div class="charts-row">'
-      +   '<div class="chart-box"><h4>成绩趋势（百分比）</h4>'
-      +     (atts.length ? '<canvas id="trendChart" height="160"></canvas>' : '<div class="no-data">暂无数据</div>')
+      +   '<div class="chart-box"><h4>'+t("chartTrendTitle")+'</h4>'
+      +     (atts.length ? '<canvas id="trendChart" height="160"></canvas>' : '<div class="no-data">'+t("noData")+'</div>')
       +   '</div>'
-      +   '<div class="chart-box"><h4>最近一次 vs 平均（分项对比）</h4>'
-      +     (atts.length ? '<canvas id="compChart" height="160"></canvas>' : '<div class="no-data">暂无数据</div>')
+      +   '<div class="chart-box"><h4>'+t("chartCompareTitle")+'</h4>'
+      +     (atts.length ? '<canvas id="compChart" height="160"></canvas>' : '<div class="no-data">'+t("noData")+'</div>')
       +   '</div>'
       + '</div>';
 
@@ -861,7 +1110,7 @@
         data:{
           labels: atts.map(function(a,i){ return a.label ? a.label : ("#"+(i+1)); }),
           datasets:[{
-            label:"百分比", data: pcts, borderColor: subj.color, backgroundColor: subj.color+"22",
+            label:t("thPercent"), data: pcts, borderColor: subj.color, backgroundColor: subj.color+"22",
             fill:true, tension:.3, pointRadius:3, pointBackgroundColor: subj.color
           }]
         },
@@ -884,8 +1133,8 @@
         data:{
           labels: comps.map(function(c){return displayName(c);}),
           datasets:[
-            {label:"最近一次", data: latestByComp, backgroundColor: subj.color},
-            {label:"历史平均", data: avgByComp, backgroundColor: subj.color+"55"}
+            {label:t("legendLatest"), data: latestByComp, backgroundColor: subj.color},
+            {label:t("legendAverage"), data: avgByComp, backgroundColor: subj.color+"55"}
           ]
         },
         options:{
@@ -906,8 +1155,9 @@
     // ---- config editing ----
     root.querySelector("#addModuleBtn").addEventListener("click", function(){
       var n = 1, name;
-      do { name = "新模块"+(n>1?n:""); n++; } while(comps.some(function(c){return moduleOf(c)===name;}));
-      comps.push({id:uid(), name:"新分项", max:10, module:name});
+      var base = state.uiLang==="en" ? "New Module" : "新模块";
+      do { name = base+(n>1?(" "+n):""); n++; } while(comps.some(function(c){return moduleOf(c)===name;}));
+      comps.push({id:uid(), name:(state.uiLang==="en"?"New Item":"新分项"), max:10, module:name});
       queueSave(); renderAll();
     });
     Array.prototype.forEach.call(root.querySelectorAll(".toggle-manage-btn"), function(btn){
@@ -920,17 +1170,17 @@
     Array.prototype.forEach.call(root.querySelectorAll(".add-item-btn"), function(btn){
       btn.addEventListener("click", function(){
         var mod = btn.getAttribute("data-module");
-        comps.push({id:uid(), name:"新分项", max:10, module:mod});
+        comps.push({id:uid(), name:(state.uiLang==="en"?"New Item":"新分项"), max:10, module:mod});
         queueSave(); renderAll();
       });
     });
     root.querySelector("#saveCompBtn").addEventListener("click", function(){
       var updated = [];
       Array.prototype.forEach.call(root.querySelectorAll("#compList .config-group"), function(grp){
-        var modName = grp.querySelector(".module-name").value.trim() || "其他";
+        var modName = grp.querySelector(".module-name").value.trim() || (state.uiLang==="en"?"Other":"其他");
         Array.prototype.forEach.call(grp.querySelectorAll(".comp-row"), function(row){
           var cid = row.getAttribute("data-cid");
-          var name = row.querySelector(".comp-name").value.trim() || "未命名";
+          var name = row.querySelector(".comp-name").value.trim() || (state.uiLang==="en"?"Untitled":"未命名");
           var max = Number(row.querySelector(".comp-max").value) || 0;
           updated.push({id:cid, name:name, max:max, module:modName});
         });
@@ -946,7 +1196,7 @@
         // tap-twice-to-confirm pattern on the button itself instead.
         if(!armed){
           armed = true;
-          btn.textContent = "确定?";
+          btn.textContent = t("confirmLabel");
           btn.classList.add("confirm-armed");
           revertTimer = setTimeout(function(){
             armed = false;
@@ -1102,7 +1352,7 @@
         r2.querySelector("#liveModuleSum").textContent = Math.round(modSum*10)/10;
         r2.querySelector("#liveModuleMax").textContent = modMax;
         r2.querySelector("#liveFullSum").textContent = Math.round(fullSum*10)/10;
-        r2.querySelector("#submitBtn").textContent = "保存修改";
+        r2.querySelector("#submitBtn").textContent = t("submitBtnEditing");
         r2.querySelector("#cancelEditBtn").style.display = "inline-block";
         r2.querySelector("#entryForm").scrollIntoView({behavior:"smooth", block:"center"});
       });
@@ -1113,7 +1363,7 @@
       btn.addEventListener("click", function(){
         if(!armed){
           armed = true;
-          btn.textContent = "确定?";
+          btn.textContent = t("confirmLabel");
           revertTimer = setTimeout(function(){
             armed = false;
             btn.textContent = originalText;
@@ -1138,6 +1388,7 @@
   /* ---------------- master render ---------------- */
   function renderAll(){
     destroyCharts();
+    applyStaticText();
     renderTabs();
     var root = document.getElementById("panelRoot");
     if(activeTab==="dash"){
@@ -1145,6 +1396,23 @@
     } else {
       renderSubject(root, activeTab);
     }
+  }
+
+  document.getElementById("langToggle").addEventListener("click", function(e){
+    var btn = e.target.closest("button");
+    if(!btn) return;
+    var lang = btn.getAttribute("data-lang");
+    if(state.uiLang === lang) return;
+    state.uiLang = lang;
+    queueSave();
+    renderAll();
+  });
+
+  var retryBtnEl = document.querySelector(".save-status-retry-btn");
+  if(retryBtnEl){
+    retryBtnEl.addEventListener("click", function(){
+      attemptSave(3, 1000);
+    });
   }
 
   loadState(function(){
