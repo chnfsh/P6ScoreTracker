@@ -139,7 +139,8 @@
   .delta.up{background:#dff5ef;color:var(--jade-deep);}
   .delta.down{background:#fce6e6;color:var(--red);}
   .delta.flat{background:#eee;color:var(--muted);}
-  .spark{height:36px;margin-top:2px;}
+  .spark-wrap{height:36px;margin-top:2px;position:relative;}
+  .spark-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
   .empty-note{font-size:13px;color:var(--muted);font-style:italic;}
 
   .total-band{
@@ -906,7 +907,7 @@
         + '<div class="name">'+s.emoji+' '+subjectName(s)+'</div>'
         + countdownBadge(s.id)
         + '<div class="sub">'+atts.length+' '+(state.uiLang==="en"?(atts.length===1?"record":"records"):"次记录")+(latest? t("dashLatestPrefix")+esc(latest.label||"—"):"")+'</div>'
-        + (atts.length ? '<canvas class="spark" id="'+sparkId+'"></canvas>' : '<div class="empty-note">'+t("dashEmptyNote")+'</div>')
+        + (atts.length ? '<div class="spark-wrap"><canvas class="spark" id="'+sparkId+'"></canvas></div>' : '<div class="empty-note">'+t("dashEmptyNote")+'</div>')
         + '<div class="metric-row"><span class="big">'+(latestPct!=null?latestPct+"%":"–")+'</span>'+deltaHtml+'</div>'
         + (isHCLSubject(s.id) ? '<div class="empty-note">'+t("hclDashNote")+'</div>' : '')
         + '</div>';
