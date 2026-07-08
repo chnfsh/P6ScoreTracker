@@ -139,8 +139,8 @@
   .delta.up{background:#dff5ef;color:var(--jade-deep);}
   .delta.down{background:#fce6e6;color:var(--red);}
   .delta.flat{background:#eee;color:var(--muted);}
-  .spark-wrap{height:36px;margin-top:2px;position:relative;}
-  .spark-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
+  .spark-wrap{height:36px;margin-top:2px;overflow:hidden;}
+  .spark-wrap canvas{display:block;}
   .empty-note{font-size:13px;color:var(--muted);font-style:italic;}
 
   .total-band{
@@ -242,6 +242,7 @@
   .charts-row{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;margin-top:28px;}
   @media (max-width:760px){.charts-row{grid-template-columns:1fr;}}
   .chart-box{border:3px solid var(--line);border-radius:18px;padding:18px;background:#fff;}
+  .chart-box canvas{max-height:280px;}
   .chart-box h4{margin:0 0 10px;font-size:14px;color:var(--muted);font-weight:700;}
   canvas{max-width:100%;}
   .no-data{color:var(--muted);font-size:15px;font-style:italic;padding:26px 0;text-align:center;}
@@ -948,6 +949,12 @@
       + '<ul class="recent-list">'+recentHtml+'</ul>';
 
     // sparklines
+    // NOTE: these must NOT use Chart.js's responsive/ResizeObserver auto-sizing.
+    // In a flex card with no fixed height, responsive:true creates a resize
+    // feedback loop (canvas resizes -> card grows -> observer fires -> canvas
+    // resizes again -> ...) that grows the page forever. Instead we measure
+    // the wrapper once and give the canvas a fixed pixel size, then set
+    // responsive:false so Chart.js never re-measures it.
     SUBJECTS.forEach(function(s){
       var atts = state.attempts[s.id];
       if(!atts.length) return;
@@ -956,12 +963,15 @@
       if(typeof Chart === "undefined") return;
       try {
         var pcts = atts.map(function(a){ return attemptPct(s.id,a); });
+        var wrapW = (ctx.parentElement && ctx.parentElement.clientWidth) || 160;
+        ctx.width = Math.max(60, Math.round(wrapW));
+        ctx.height = 36;
         charts["spark-"+s.id] = new Chart(ctx, {
           type:"line",
           data:{ labels: atts.map(function(_,i){return i+1;}),
             datasets:[{ data: pcts, borderColor:s.color, borderWidth:2, pointRadius:0, tension:.35, fill:false }] },
           options:{
-            responsive:true, maintainAspectRatio:false,
+            responsive:false, maintainAspectRatio:false,
             plugins:{legend:{display:false},tooltip:{enabled:false}},
             scales:{ x:{display:false}, y:{display:false} },
             elements:{ point:{radius:0} }
