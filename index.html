@@ -1008,7 +1008,7 @@
       var rows = compsInModule.map(function(c){
         return '<div class="comp-row" data-cid="'+c.id+'">'
           + '<input type="text" class="comp-name" value="'+esc(displayName(c))+'" placeholder="'+ (state.uiLang==="en"?"Item name":"分项名称") +'">'
-          + '<input type="number" class="comp-max" min="0" value="'+c.max+'">'
+          + '<input type="number" class="comp-max" min="0" step="0.5" value="'+c.max+'">'
           + '<span style="font-size:12px;color:var(--muted)">'+(state.uiLang==="en"?"pts":"分")+'</span>'
           + (isManaging ? '<button type="button" class="del" title="'+t("deleteBtnLabel")+'" '+(comps.length<=1?"disabled":"")+'>✕</button>' : '')
           + '</div>';
@@ -1027,7 +1027,7 @@
       var compsInModule = comps.filter(function(c){ return moduleOf(c)===m; });
       var cells = compsInModule.map(function(c){
         return '<div class="score-cell"><label>'+esc(displayName(c))+' /'+c.max+'</label>'
-          + '<input type="number" min="0" max="'+c.max+'" class="score-input" data-cid="'+c.id+'" data-module="'+esc(m)+'" placeholder="0"></div>';
+          + '<input type="number" min="0" max="'+c.max+'" step="0.5" class="score-input" data-cid="'+c.id+'" data-module="'+esc(m)+'" placeholder="0"></div>';
       }).join("");
       return '<div class="module-group" data-module="'+esc(m)+'">'
         +   '<label class="module-toggle"><input type="checkbox" class="module-check" data-module="'+esc(m)+'" checked> '
@@ -1098,7 +1098,7 @@
       +   '</div>'
       +   '<div class="live-total" style="background:#fff8ec;">'
       +     '<span class="override-wrap"><input type="checkbox" id="overrideChk"> '+t("overrideLabelText")
-      +       '<input type="number" id="overrideVal" disabled placeholder="'+t("overridePlaceholder")+'"></span>'
+      +       '<input type="number" id="overrideVal" step="0.5" disabled placeholder="'+t("overridePlaceholder")+'"></span>'
       +   '</div>'
       +   '<textarea class="notes" id="fNotes" placeholder="'+t("notesPlaceholder")+'"></textarea>'
       +   '<div class="form-actions">'
