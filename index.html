@@ -156,6 +156,7 @@
     font-size:16px;color:var(--jade-deep);
     font-weight:700;margin:28px 0 12px;font-family:'Baloo 2';
   }
+  h3.section-title:first-child{margin-top:4px;}
   ul.recent-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:9px;}
   ul.recent-list li{
     display:flex;justify-content:space-between;gap:10px;font-size:14.5px;
@@ -243,6 +244,20 @@
   @media (max-width:760px){.charts-row{grid-template-columns:1fr;}}
   .chart-box{border:3px solid var(--line);border-radius:18px;padding:18px;background:#fff;}
   .chart-box canvas{max-height:280px;}
+  .progress-card{
+    background:var(--paper-card);border:3px solid var(--line);border-radius:18px;
+    padding:18px;margin-bottom:22px;
+  }
+  .progress-card-title{font-weight:800;font-size:15px;color:var(--ink);margin-bottom:12px;}
+  .chart-type-toggle{display:flex;gap:8px;margin-bottom:14px;}
+  .chart-type-btn{
+    border:2px solid var(--line);background:#fff;color:var(--ink-soft);
+    font-weight:700;font-size:13px;padding:7px 14px;border-radius:999px;cursor:pointer;
+    transition:background .15s,color .15s,border-color .15s;
+  }
+  .chart-type-btn.active{background:var(--jade);border-color:var(--jade);color:#fff;}
+  .progress-chart-wrap{overflow-x:auto;}
+  .progress-chart-wrap canvas{max-width:100%;}
   .chart-box h4{margin:0 0 10px;font-size:14px;color:var(--muted);font-weight:700;}
   canvas{max-width:100%;}
   .no-data{color:var(--muted);font-size:15px;font-style:italic;padding:26px 0;text-align:center;}
@@ -340,6 +355,11 @@
       totalBandTitle: "预估 PSLE 总分",
       totalBandExplain: "分数越低代表表现越好，4分为满分（4科全部AL1）。高级华文按 <b>优秀 Distinction / 良好 Merit / 及格 Pass / 未达标 Ungraded</b> 评分，<u>不计入</u>这个四科总分，只在总分相同时作为申请 SAP 学校的加分参考哦～",
       subjectNoScoreYet: "：暂无成绩",
+      progressSectionTitle: "📈 学科进步",
+      progressCardTitle: "📊 阶段性成绩趋势",
+      chartTypeLine: "📈 折线图",
+      chartTypeBar: "📊 柱状图",
+      progressEmptyNote: "给记录填上日期，这里就会自动按时间顺序显示各科的变化趋势啦（不需要各科对齐同一场考试）。",
       recentTitle: "最近的记录",
       recentEmpty: "暂无记录，先到各科目页面添加第一次成绩吧。",
       cdMore30: "📅 距考试还有 {d} 天",
@@ -410,6 +430,11 @@
       totalBandTitle: "Estimated PSLE Total Score",
       totalBandExplain: "Lower is better — 4 is the best possible score (AL1 in all 4 subjects). Higher Chinese is graded <b>Distinction / Merit / Pass / Ungraded</b> and is <u>not</u> counted in this 4-subject total; it's only used as an SAP-school tie-breaker.",
       subjectNoScoreYet: ": no score yet",
+      progressSectionTitle: "📈 Subject Progress",
+      progressCardTitle: "📊 Progress Over Time",
+      chartTypeLine: "📈 Line",
+      chartTypeBar: "📊 Bar",
+      progressEmptyNote: "Add a date to your records and they'll automatically line up here in chronological order (subjects don't need to match up to the same exam).",
       recentTitle: "Recent Records",
       recentEmpty: "No records yet — head to a subject page to add your first score.",
       cdMore30: "📅 {d} days until the exam",
@@ -610,6 +635,7 @@
   var STORAGE_KEY = "psle-tracker-data-v1";
   var state = freshState();
   var activeTab = "dash";
+  var progressChartType = "line"; // UI-only toggle for the combined subject-progress chart on the dashboard
 
   /* ---------------- storage ----------------
      window.storage only exists inside Claude's artifact runtime (claude.ai).
@@ -883,6 +909,34 @@
     charts = {};
   }
 
+  // Builds a shared date-based x-axis across ALL subjects, so every subject's
+  // progress can be plotted on one combined chart. Points are placed by their
+  // real attempt date — subjects are NOT required to line up with each other;
+  // each subject simply shows its own records at their own actual dates, and
+  // the x-axis is just every distinct date (across all subjects) in order.
+  // Attempts without a date can't be placed on a date axis, so they're
+  // skipped here only (they still show up fine everywhere else, e.g. the
+  // history table and single-subject trend chart, which use record order).
+  function buildProgressTimeline(){
+    var dateSet = {};
+    SUBJECTS.forEach(function(s){
+      state.attempts[s.id].forEach(function(a){
+        if(a.date) dateSet[a.date] = true;
+      });
+    });
+    return Object.keys(dateSet).sort();
+  }
+
+  function progressDataForSubject(s, timeline){
+    var atts = state.attempts[s.id];
+    return timeline.map(function(d){
+      for(var i=atts.length-1;i>=0;i--){
+        if(atts[i].date===d) return attemptPct(s.id, atts[i]);
+      }
+      return null;
+    });
+  }
+
   function renderDashboard(root){
     // 高级华文 (HCL) is graded Distinction/Merit/Pass and is NOT part of the
     // 4-subject PSLE aggregate — only English, Math, Science and (standard) 华文 count.
@@ -939,14 +993,39 @@
         +'<span class="tag">'+pct+'%（AL'+alFromPct(pct)+'）</span></li>';
     }).join("") : '<li class="empty-note" style="border:none;">'+t("recentEmpty")+'</li>';
 
+    var progressTimeline = buildProgressTimeline();
+    var progressHtml;
+    if(!progressTimeline.length){
+      progressHtml = '<div class="no-data">'+t("progressEmptyNote")+'</div>';
+    } else {
+      progressHtml =
+        '<div class="chart-type-toggle">'
+        +   '<button type="button" class="chart-type-btn'+(progressChartType==="line"?" active":"")+'" data-ctype="line">'+t("chartTypeLine")+'</button>'
+        +   '<button type="button" class="chart-type-btn'+(progressChartType==="bar"?" active":"")+'" data-ctype="bar">'+t("chartTypeBar")+'</button>'
+        + '</div>'
+        + '<div class="progress-chart-wrap"><canvas id="progressChart"></canvas></div>';
+    }
+
     root.innerHTML =
-      '<div class="dash-grid">'+cardsHtml+'</div>'
+      '<h3 class="section-title">'+t("progressSectionTitle")+'</h3>'
+      + '<div class="progress-card">'
+      +   '<div class="progress-card-title">'+t("progressCardTitle")+'</div>'
+      +   progressHtml
+      + '</div>'
+      + '<div class="dash-grid">'+cardsHtml+'</div>'
       + '<div class="total-band">'
       +   '<div class="num">'+(totalOk?totalAL:"—")+' <small>/ 32</small></div>'
       +   '<div class="label"><b>'+t("totalBandTitle")+'</b>（'+totalDetail+'）。'+t("totalBandExplain")+'</div>'
       + '</div>'
       + '<h3 class="section-title">'+t("recentTitle")+'</h3>'
       + '<ul class="recent-list">'+recentHtml+'</ul>';
+
+    Array.prototype.forEach.call(root.querySelectorAll(".chart-type-btn"), function(btn){
+      btn.addEventListener("click", function(){
+        progressChartType = btn.getAttribute("data-ctype");
+        renderAll();
+      });
+    });
 
     // sparklines
     // NOTE: these must NOT use Chart.js's responsive/ResizeObserver auto-sizing.
@@ -979,6 +1058,39 @@
         });
       } catch(sparkErr) { /* leave sparkline blank rather than breaking the dashboard */ }
     });
+
+    // combined subject-progress chart (see buildProgressTimeline/progressDataForSubject above)
+    if(progressTimeline.length && typeof Chart !== "undefined"){
+      var pCtx = document.getElementById("progressChart");
+      if(pCtx){
+        try {
+          var pWrapW = (pCtx.parentElement && pCtx.parentElement.clientWidth) || 320;
+          pCtx.width = Math.max(240, Math.round(pWrapW));
+          pCtx.height = 280;
+          var pDatasets = SUBJECTS.map(function(s){
+            return {
+              label: s.short, data: progressDataForSubject(s, progressTimeline),
+              borderColor: s.color, backgroundColor: progressChartType==="bar" ? s.color : s.color+"22",
+              fill:false, tension:.3, pointRadius:4, pointBackgroundColor: s.color, spanGaps:true
+            };
+          });
+          charts["progress"] = new Chart(pCtx, {
+            type: progressChartType,
+            data:{ labels: progressTimeline, datasets: pDatasets },
+            options:{
+              responsive:false, maintainAspectRatio:false,
+              plugins:{ legend:{ position:"bottom" } },
+              scales:{ y:{ min:0, max:100, ticks:{ callback:function(v){return v+"%";} } } }
+            }
+          });
+        } catch(progressErr) {
+          var pFailMsg = state.uiLang==="en"
+            ? "Chart failed to load (network may be blocking the chart library). The data above is safe."
+            : "图表加载失败（可能是网络屏蔽了图表脚本），不影响上面的成绩数据。";
+          pCtx.parentElement.innerHTML = '<div class="no-data">'+pFailMsg+'</div>';
+        }
+      }
+    }
   }
 
   /* ---------------- rendering: subject panel ---------------- */
