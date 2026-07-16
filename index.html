@@ -802,6 +802,25 @@
     if(!mt) return 0;
     return Math.round((attemptTotal(subjId, att)/mt)*1000)/10;
   }
+  // Returns a subject's attempts ordered by actual exam date (ascending),
+  // not by the order they were typed in. Records without a date are pushed
+  // to the end, keeping their original relative order (the sort is stable).
+  // This is what the history table, single-subject trend chart, "latest
+  // score" card, and dashboard sparkline should all use — otherwise editing
+  // in an older exam later (e.g. typing in a 2018 PSLE paper after this
+  // year's prelims) would show it out of chronological order.
+  function sortedAttempts(subjId){
+    return state.attempts[subjId]
+      .map(function(a, idx){ return {a:a, idx:idx}; })
+      .sort(function(x,y){
+        var dx=x.a.date, dy=y.a.date;
+        if(dx && dy) return dx<dy?-1:(dx>dy?1:(x.idx-y.idx));
+        if(dx && !dy) return -1;
+        if(!dx && dy) return 1;
+        return x.idx-y.idx;
+      })
+      .map(function(o){ return o.a; });
+  }
   function alFromPct(pct){
     if(pct>=90) return 1;
     if(pct>=85) return 2;
@@ -916,7 +935,8 @@
   // the x-axis is just every distinct date (across all subjects) in order.
   // Attempts without a date can't be placed on a date axis, so they're
   // skipped here only (they still show up fine everywhere else, e.g. the
-  // history table and single-subject trend chart, which use record order).
+  // history table and single-subject trend chart, which are sorted by date
+  // via sortedAttempts()).
   function buildProgressTimeline(){
     var dateSet = {};
     SUBJECTS.forEach(function(s){
@@ -943,7 +963,7 @@
     var coreForTotal = ["en","ma","sc","cl"];
 
     var cardsHtml = SUBJECTS.map(function(s){
-      var atts = state.attempts[s.id];
+      var atts = sortedAttempts(s.id);
       var latest = atts[atts.length-1];
       var prev = atts[atts.length-2];
       var latestPct = latest ? attemptPct(s.id, latest) : null;
@@ -970,7 +990,7 @@
 
     var totalAL = 0, totalOk = true;
     var totalDetail = coreForTotal.map(function(id){
-      var atts = state.attempts[id];
+      var atts = sortedAttempts(id);
       var latest = atts[atts.length-1];
       if(!latest){ totalOk=false; return subjectName(subjectById(id))+t("subjectNoScoreYet"); }
       var pct = attemptPct(id, latest);
@@ -1035,7 +1055,7 @@
     // the wrapper once and give the canvas a fixed pixel size, then set
     // responsive:false so Chart.js never re-measures it.
     SUBJECTS.forEach(function(s){
-      var atts = state.attempts[s.id];
+      var atts = sortedAttempts(s.id);
       if(!atts.length) return;
       var ctx = document.getElementById("spark-"+s.id);
       if(!ctx) return;
@@ -1097,7 +1117,7 @@
   function renderSubject(root, subjId){
     var subj = subjectById(subjId);
     var comps = state.components[subjId];
-    var atts = state.attempts[subjId];
+    var atts = sortedAttempts(subjId);
     var mt = maxTotal(subjId);
 
     // renderSubject rebuilds the whole panel via innerHTML every time, which
